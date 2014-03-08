@@ -43,6 +43,12 @@ static const hubbub_string u_fffd_str = { u_fffd, sizeof(u_fffd) };
 static const uint8_t lf = '\n';
 static const hubbub_string lf_str = { &lf, 1 };
 
+/**
+ * String for when we want to emit null
+ */
+static const uint8_t nl = '\0';
+static const hubbub_string nl_str = { &nl, 1 };
+
 
 /**
  * Tokeniser states
@@ -71,6 +77,7 @@ typedef enum hubbub_tokeniser_state {
 	STATE_COMMENT,
 	STATE_COMMENT_END_DASH,
 	STATE_COMMENT_END,
+	STATE_COMMENT_END_BANG,
 	STATE_MATCH_DOCTYPE,
 	STATE_DOCTYPE,
 	STATE_BEFORE_DOCTYPE_NAME,
@@ -528,6 +535,7 @@ hubbub_error hubbub_tokeniser_run(hubbub_tokeniser *tokeniser)
 		case STATE_COMMENT:
 		case STATE_COMMENT_END_DASH:
 		case STATE_COMMENT_END:
+		case STATE_COMMENT_END_BANG:
 			cont = hubbub_tokeniser_handle_comment(tokeniser);
 			break;
 		state(STATE_MATCH_DOCTYPE)
@@ -716,28 +724,6 @@ hubbub_error hubbub_tokeniser_handle_data(hubbub_tokeniser *tokeniser)
 			tokeniser->context.pending = len;
 			tokeniser->state = STATE_TAG_OPEN;
 			break;
-		} else if (c == '>' && tokeniser->escape_flag == true &&
-				(tokeniser->content_model ==
-						HUBBUB_CONTENT_MODEL_RCDATA ||
-				tokeniser->content_model ==
-						HUBBUB_CONTENT_MODEL_CDATA)) {
-			/* no need to check that there are enough characters,
-			 * since you can only run into this if the flag is
-			 * true in the first place, which requires four
-			 * characters. */
-			error = parserutils_inputstream_peek(
-					tokeniser->input,
-					tokeniser->context.pending - 2,
-					&cptr,
-					&len);
-
-			assert(error == PARSERUTILS_OK);
-
-			if (strncmp((char *) cptr, "-->", SLEN("-->")) == 0) {
-				tokeniser->escape_flag = false;
-			}
-
-			tokeniser->context.pending += len;
 		} else if (c == '\0') {
 			if (tokeniser->context.pending > 0) {
 				/* Emit any pending characters */
@@ -745,7 +731,7 @@ hubbub_error hubbub_tokeniser_handle_data(hubbub_tokeniser *tokeniser)
 			}
 
 			/* Emit a replacement character */
-			emit_character_token(tokeniser, &u_fffd_str);
+			emit_character_token(tokeniser, &nl_str);
 
 			/* Advance past NUL */
 			parserutils_inputstream_advance(tokeniser->input, 1);
@@ -776,14 +762,8 @@ hubbub_error hubbub_tokeniser_handle_data(hubbub_tokeniser *tokeniser)
 		} else {
 			/* Just collect into buffer */
 			tokeniser->context.pending += len;
+			emit_current_chars(tokeniser);
 		}
-	}
-
-	if (tokeniser->state != STATE_TAG_OPEN &&
-		(tokeniser->state != STATE_DATA || error == PARSERUTILS_EOF) &&
-			tokeniser->context.pending > 0) {
-		/* Emit any pending characters */
-		emit_current_chars(tokeniser);
 	}
 
 	if (error == PARSERUTILS_EOF) {
@@ -879,7 +859,8 @@ hubbub_error hubbub_tokeniser_handle_tag_open(hubbub_tokeniser *tokeniser)
 
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
-			/* Return to data state with '<' still in "chars" */
+			/* Return to data state with emmiting pending '<' */
+			emit_current_chars(tokeniser);
 			tokeniser->state = STATE_DATA;
 			return HUBBUB_OK;
 		} else {
@@ -928,11 +909,6 @@ hubbub_error hubbub_tokeniser_handle_tag_open(hubbub_tokeniser *tokeniser)
 			tokeniser->context.pending += len;
 
 			tokeniser->state = STATE_TAG_NAME;
-		} else if (c == '>') {
-			/** \todo parse error */
-
-			tokeniser->context.pending += len;
-			tokeniser->state = STATE_DATA;
 		} else if (c == '?') {
 			/** \todo parse error */
 
@@ -943,7 +919,9 @@ hubbub_error hubbub_tokeniser_handle_tag_open(hubbub_tokeniser *tokeniser)
 
 			tokeniser->state = STATE_BOGUS_COMMENT;
 		} else {
-			/* Return to data state with '<' still in "chars" */
+			/* Emmiting pending chars i.e only one '<' */
+			emit_current_chars(tokeniser);
+
 			tokeniser->state = STATE_DATA;
 		}
 	}
@@ -1034,12 +1012,13 @@ hubbub_error hubbub_tokeniser_handle_close_tag_open(hubbub_tokeniser *tokeniser)
 	} else {
 		error = parserutils_inputstream_peek(tokeniser->input,
 				tokeniser->context.pending, &cptr, &len);
-
 		if (error == PARSERUTILS_EOF) {
 			/** \todo parse error */
+			/* Return to data state after emitting  '</' */
 
-			/* Return to data state with "</" pending */
+			emit_current_chars(tokeniser);
 			tokeniser->state = STATE_DATA;
+
 			return HUBBUB_OK;
 		} else if (error != PARSERUTILS_OK) {
 			return hubbub_error_from_parserutils_error(error);
@@ -1118,7 +1097,7 @@ hubbub_error hubbub_tokeniser_handle_tag_name(hubbub_tokeniser *tokeniser)
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1167,7 +1146,7 @@ hubbub_error hubbub_tokeniser_handle_before_attribute_name(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1240,7 +1219,7 @@ hubbub_error hubbub_tokeniser_handle_attribute_name(hubbub_tokeniser *tokeniser)
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1295,7 +1274,7 @@ hubbub_error hubbub_tokeniser_handle_after_attribute_name(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1372,7 +1351,7 @@ hubbub_error hubbub_tokeniser_handle_before_attribute_value(
 		if (error == PARSERUTILS_EOF) {
 			/** \todo parse error */
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1433,7 +1412,7 @@ hubbub_error hubbub_tokeniser_handle_attribute_value_dq(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1495,7 +1474,7 @@ hubbub_error hubbub_tokeniser_handle_attribute_value_sq(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1557,7 +1536,7 @@ hubbub_error hubbub_tokeniser_handle_attribute_value_uq(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1667,7 +1646,7 @@ hubbub_error hubbub_tokeniser_handle_after_attribute_value_q(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1709,7 +1688,7 @@ hubbub_error hubbub_tokeniser_handle_self_closing_start_tag(
 	if (error != PARSERUTILS_OK) {
 		if (error == PARSERUTILS_EOF) {
 			tokeniser->state = STATE_DATA;
-			return emit_current_tag(tokeniser);
+			return HUBBUB_OK;
 		} else {
 			return hubbub_error_from_parserutils_error(error);
 		}
@@ -1893,7 +1872,8 @@ hubbub_error hubbub_tokeniser_handle_comment(hubbub_tokeniser *tokeniser)
 
 	if (c == '>' && (tokeniser->state == STATE_COMMENT_START_DASH ||
 			tokeniser->state == STATE_COMMENT_START ||
-			tokeniser->state == STATE_COMMENT_END)) {
+			tokeniser->state == STATE_COMMENT_END ||
+			tokeniser->state == STATE_COMMENT_END_BANG)) {
 		tokeniser->context.pending += len;
 
 		/** \todo parse error if state != COMMENT_END */
@@ -1908,6 +1888,14 @@ hubbub_error hubbub_tokeniser_handle_comment(hubbub_tokeniser *tokeniser)
 			tokeniser->state = STATE_COMMENT_END_DASH;
 		} else if (tokeniser->state == STATE_COMMENT_END_DASH) {
 			tokeniser->state = STATE_COMMENT_END;
+		} else if (tokeniser->state == STATE_COMMENT_END_BANG){
+			error = parserutils_buffer_append(tokeniser->buffer,
+					(uint8_t *) "--!", SLEN("--!"));
+			if (error != PARSERUTILS_OK) {
+				return hubbub_error_from_parserutils_error(
+						error);
+			}
+			tokeniser->state = STATE_COMMENT_END_DASH;
 		} else if (tokeniser->state == STATE_COMMENT_END) {
 			error = parserutils_buffer_append(tokeniser->buffer,
 					(uint8_t *) "-", SLEN("-"));
@@ -1917,6 +1905,9 @@ hubbub_error hubbub_tokeniser_handle_comment(hubbub_tokeniser *tokeniser)
 			}
 		}
 
+		tokeniser->context.pending += len;
+	} else if (c == '!' && tokeniser->state == STATE_COMMENT_END) {
+		tokeniser->state = STATE_COMMENT_END_BANG;
 		tokeniser->context.pending += len;
 	} else {
 		if (tokeniser->state == STATE_COMMENT_START_DASH ||
@@ -1930,6 +1921,13 @@ hubbub_error hubbub_tokeniser_handle_comment(hubbub_tokeniser *tokeniser)
 		} else if (tokeniser->state == STATE_COMMENT_END) {
 			error = parserutils_buffer_append(tokeniser->buffer,
 					(uint8_t *) "--", SLEN("--"));
+			if (error != PARSERUTILS_OK) {
+				return hubbub_error_from_parserutils_error(
+						error);
+			}
+		} else if (tokeniser->state == STATE_COMMENT_END_BANG) {
+			error = parserutils_buffer_append(tokeniser->buffer,
+					(uint8_t *) "--!", SLEN("--!"));
 			if (error != PARSERUTILS_OK) {
 				return hubbub_error_from_parserutils_error(
 						error);
@@ -3021,15 +3019,18 @@ hubbub_error hubbub_tokeniser_handle_numbered_entity(
 		} else if (cp == 0x0D) {
 			cp = 0x000A;
 		} else if (ctx->match_entity.overflow || 
-				cp <= 0x0008 || cp == 0x000B ||
-				(0x000E <= cp && cp <= 0x001F) ||
-				(0x007F <= cp && cp <= 0x009F) ||
 				(0xD800 <= cp && cp <= 0xDFFF) ||
-				(0xFDD0 <= cp && cp <= 0xFDEF) ||
-				(cp & 0xFFFE) == 0xFFFE) {
+				cp == 0x0000){
 			/* the check for cp > 0x10FFFF per spec is performed
 			 * in the loop above to avoid overflow */
+			/* Parse error */
 			cp = 0xFFFD;
+		} else if (cp <= 0x0008 || cp == 0x000B ||
+				(0x000E <= cp && cp <= 0x001F) ||
+				(0x007F <= cp && cp <= 0x009F) ||
+				(0xFDD0 <= cp && cp <= 0xFDEF) ||
+				(cp & 0xFFFE) == 0xFFFE) {
+			/* Parse error */
 		}
 
 		ctx->match_entity.codepoint = cp;

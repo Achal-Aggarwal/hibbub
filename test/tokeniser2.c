@@ -14,6 +14,8 @@
 
 #include "testutils.h"
 
+#define strlen n_str
+
 typedef struct context {
 	const uint8_t *pbuffer;
 
@@ -235,6 +237,7 @@ hubbub_error token_handler(const hubbub_token *token, void *pw)
 	/* If we've run off the end, this is an error -- the tokeniser has
 	 * produced more tokens than expected. We allow for the generation
 	 * of a terminating EOF token, however. */
+
 	assert("too many tokens" &&
 			(ctx->output_index < array_list_length(ctx->output) ||
 			token->type == HUBBUB_TOKEN_EOF));

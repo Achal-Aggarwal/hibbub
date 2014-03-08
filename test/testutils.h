@@ -63,6 +63,7 @@ typedef bool (*line_func)(const char *data, size_t datalen, void *pw);
 static size_t parse_strlen(const char *str, size_t limit);
 bool parse_testfile(const char *filename, line_func callback, void *pw);
 size_t parse_filesize(const char *filename);
+size_t n_str(const char *str);
 
 /**
  * Testcase datafile parser driver
@@ -167,6 +168,24 @@ char *my_strndup(const char *s, size_t n)
 	s2[len] = '\0';
 
 	return s2;
+}
+
+/**
+ * Utility string length measurer; assumes strings are '\0'(null) terminated
+ *
+ * \param str    String to measure length of
+ * \return String length
+ */
+size_t n_str(const char *str)
+{
+	size_t len = 0;
+
+	if (str == NULL)
+		return 0;
+
+	for (;str[len];++len);
+
+	return len;
 }
 
 #define strndup my_strndup
