@@ -120,13 +120,21 @@
 "input":"&#000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000065;",
 "output":[["Character", "A"]]},
 
+{"description":"Empty hex numeric entities",
+"input":"&#x &#X ",
+"output":["ParseError", ["Character", "&#x "], "ParseError", ["Character", "&#X "]]},
+
+{"description":"Empty decimal numeric entities",
+"input":"&# &#; ",
+"output":["ParseError", ["Character", "&# "], "ParseError", ["Character", "&#; "]]},
+
 {"description":"Non-BMP numeric entity",
 "input":"&#x10000;",
 "output":[["Character", "\uD800\uDC00"]]},
 
 {"description":"Maximum non-BMP numeric entity",
 "input":"&#X10FFFF;",
-"output":["ParseError", ["Character", "\uFFFD"]]},
+"output":["ParseError", ["Character", "\uDBFF\uDFFF"]]},
 
 {"description":"Above maximum numeric entity",
 "input":"&#x110000;",
@@ -294,6 +302,10 @@
 "output":["ParseError", ["StartTag", "a", {"a":"aa`"}]]},
 
 {"description":"EOF in tag name state ",
+"input":"<a",
+"output":["ParseError"]},
+
+{"description":"EOF in tag name state",
 "input":"<a",
 "output":["ParseError"]},
 
