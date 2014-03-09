@@ -386,7 +386,7 @@
 
 {"description": "Invalid numeric entity character U+10FFFF",
 "input": "&#x10ffff;",
-"output": ["ParseError", ["Character", "\uFFFD"]]},
+"output": ["ParseError", ["Character", "\uDBFF\uDFFF"]]},
 
 {"description": "Valid numeric entity character U+0009",
 "input": "&#x0009;",
