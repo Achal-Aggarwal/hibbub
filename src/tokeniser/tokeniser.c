@@ -450,7 +450,7 @@ hubbub_error hubbub_tokeniser_run(hubbub_tokeniser *tokeniser)
 	if (tokeniser->paused == true)
 		return HUBBUB_PAUSED;
 
-#if 0
+#if 1
 #define state(x) \
 		case x: \
 			printf( #x "\n");
@@ -1432,23 +1432,6 @@ hubbub_error hubbub_tokeniser_handle_attribute_value_dq(
 		COLLECT_MS(ctag->attributes[ctag->n_attributes - 1].value,
 				u_fffd, sizeof(u_fffd));
 		tokeniser->context.pending += len;
-	} else if (c == '\r') {
-		error = parserutils_inputstream_peek(
-				tokeniser->input,
-				tokeniser->context.pending + len,
-				&cptr,
-				&len);
-
-		if (error != PARSERUTILS_OK && error != PARSERUTILS_EOF) {
-			return hubbub_error_from_parserutils_error(error);
-		} else if (error == PARSERUTILS_EOF || *cptr != '\n') {
-			COLLECT_MS(ctag->attributes[
-					ctag->n_attributes - 1].value,
-					&lf, sizeof(lf));
-		}
-
-		/* Consume '\r' */
-		tokeniser->context.pending += 1;
 	} else {
 		COLLECT_MS(ctag->attributes[ctag->n_attributes - 1].value,
 				cptr, len);
