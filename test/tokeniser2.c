@@ -14,6 +14,8 @@
 
 #include "testutils.h"
 
+#define strlen n_str
+
 typedef struct context {
 	const uint8_t *pbuffer;
 
@@ -301,7 +303,8 @@ hubbub_error token_handler(const hubbub_token *token, void *pw)
 				gotsys,
 				(int) token->data.doctype.system_id.len);
 		}
-
+		printf(":%d: :%d:\n", (int)token->data.doctype.name.len, (int) strlen(expname));
+		printf(":%s: :%s:\n", gotname, expname);
 		assert(token->data.doctype.name.len == strlen(expname));
 		assert(strncmp(gotname, expname, strlen(expname)) == 0);
 
