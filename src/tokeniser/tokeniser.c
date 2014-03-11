@@ -43,16 +43,26 @@ static const hubbub_string u_fffd_str = { u_fffd, sizeof(u_fffd) };
 static const uint8_t lf = '\n';
 static const hubbub_string lf_str = { &lf, 1 };
 
-
 /**
  * Tokeniser states
  */
 typedef enum hubbub_tokeniser_state {
 	STATE_DATA,
 	STATE_CHARACTER_REFERENCE_DATA,
+	STATE_RCDATA,
+	STATE_CHARACTER_REFERENCE_RCDATA,
+	STATE_RAWTEXT,
+	STATE_SCRIPT_DATA,
+	STATE_PLAINTEXT,
 	STATE_TAG_OPEN,
 	STATE_CLOSE_TAG_OPEN,
 	STATE_TAG_NAME,
+	STATE_RCDATA_LESSTHAN,
+	STATE_RCDATA_CLOSE_TAG_OPEN,
+	STATE_RCDATA_CLOSE_TAG_NAME,
+	STATE_RAWTEXT_LESSTHAN,
+	STATE_RAWTEXT_CLOSE_TAG_OPEN,
+	STATE_RAWTEXT_CLOSE_TAG_NAME,
 	STATE_BEFORE_ATTRIBUTE_NAME,
 	STATE_ATTRIBUTE_NAME,
 	STATE_AFTER_ATTRIBUTE_NAME,
@@ -166,8 +176,6 @@ typedef struct hubbub_tokeniser_context {
  */
 struct hubbub_tokeniser {
 	hubbub_tokeniser_state state;	/**< Current tokeniser state */
-	hubbub_content_model content_model;	/**< Current content
-						 * model flag */
 	bool escape_flag;		/**< Escape flag **/
 	bool process_cdata_section;	/**< Whether to process CDATA sections*/
 	bool paused; /**< flag for if parsing is currently paused */
@@ -188,11 +196,33 @@ struct hubbub_tokeniser {
 static hubbub_error hubbub_tokeniser_handle_data(hubbub_tokeniser *tokeniser);
 static hubbub_error hubbub_tokeniser_handle_character_reference_data(
 		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rcdata(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_character_reference_rcdata(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rawtext(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_script_data(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_plaintext(
+		hubbub_tokeniser *tokeniser);
 static hubbub_error hubbub_tokeniser_handle_tag_open(
 		hubbub_tokeniser *tokeniser);
 static hubbub_error hubbub_tokeniser_handle_close_tag_open(
 		hubbub_tokeniser *tokeniser);
 static hubbub_error hubbub_tokeniser_handle_tag_name(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rcdata_lessthan(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rcdata_close_tag_open(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rcdata_close_tag_name(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rawtext_lessthan(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rawtext_close_tag_open(
+		hubbub_tokeniser *tokeniser);
+static hubbub_error hubbub_tokeniser_handle_rawtext_close_tag_name(
 		hubbub_tokeniser *tokeniser);
 static hubbub_error hubbub_tokeniser_handle_before_attribute_name(
 		hubbub_tokeniser *tokeniser);
@@ -313,7 +343,6 @@ hubbub_error hubbub_tokeniser_create(parserutils_inputstream *input,
 	}
 
 	tok->state = STATE_DATA;
-	tok->content_model = HUBBUB_CONTENT_MODEL_PCDATA;
 
 	tok->escape_flag = false;
 	tok->process_cdata_section = false;
@@ -385,8 +414,18 @@ hubbub_error hubbub_tokeniser_setopt(hubbub_tokeniser *tokeniser,
 		tokeniser->error_handler = params->error_handler.handler;
 		tokeniser->error_pw = params->error_handler.pw;
 		break;
-	case HUBBUB_TOKENISER_CONTENT_MODEL:
-		tokeniser->content_model = params->content_model.model;
+	case HUBBUB_TOKENISER_INITIAL_STATE:
+		if (params->initial_state.state == HUBBUB_INITIAL_STATE_DATA) {
+			tokeniser->state = STATE_DATA;
+		} else if (params->initial_state.state == HUBBUB_INITIAL_STATE_RCDATA) {
+			tokeniser->state = STATE_RCDATA;
+		} else if (params->initial_state.state == HUBBUB_INITIAL_STATE_CDATA) {
+			tokeniser->state = STATE_CDATA_BLOCK;
+		} else if (params->initial_state.state == HUBBUB_INITIAL_STATE_PLAINTEXT) {
+			tokeniser->state = STATE_PLAINTEXT;
+		} else if (params->initial_state.state == HUBBUB_INITIAL_STATE_RAWTEXT) {
+			tokeniser->state = STATE_RAWTEXT;
+		}  
 		break;
 	case HUBBUB_TOKENISER_PROCESS_CDATA:
 		tokeniser->process_cdata_section = params->process_cdata;
@@ -465,6 +504,26 @@ hubbub_error hubbub_tokeniser_run(hubbub_tokeniser *tokeniser)
 			cont = hubbub_tokeniser_handle_character_reference_data(
 					tokeniser);
 			break;
+		state(STATE_RCDATA)
+			cont = hubbub_tokeniser_handle_rcdata(
+					tokeniser);
+			break;
+		state(STATE_CHARACTER_REFERENCE_RCDATA)
+			cont = hubbub_tokeniser_handle_character_reference_rcdata(
+					tokeniser);
+			break;
+		state(STATE_RAWTEXT)
+			cont = hubbub_tokeniser_handle_rawtext(
+					tokeniser);
+			break;
+		state(STATE_SCRIPT_DATA)
+			cont = hubbub_tokeniser_handle_script_data(
+					tokeniser);
+			break;
+		state(STATE_PLAINTEXT)
+			cont = hubbub_tokeniser_handle_plaintext(
+					tokeniser);
+			break;
 		state(STATE_TAG_OPEN)
 			cont = hubbub_tokeniser_handle_tag_open(tokeniser);
 			break;
@@ -474,6 +533,30 @@ hubbub_error hubbub_tokeniser_run(hubbub_tokeniser *tokeniser)
 			break;
 		state(STATE_TAG_NAME)
 			cont = hubbub_tokeniser_handle_tag_name(tokeniser);
+			break;
+		state(STATE_RCDATA_LESSTHAN)
+			cont = hubbub_tokeniser_handle_rcdata_lessthan(
+					tokeniser);
+			break;
+		state(STATE_RCDATA_CLOSE_TAG_OPEN)
+			cont = hubbub_tokeniser_handle_rcdata_close_tag_open(
+					tokeniser);
+			break;
+		state(STATE_RCDATA_CLOSE_TAG_NAME)
+			cont = hubbub_tokeniser_handle_rcdata_close_tag_name(
+					tokeniser);
+			break;
+		state(STATE_RAWTEXT_LESSTHAN)
+			cont = hubbub_tokeniser_handle_rawtext_lessthan(
+					tokeniser);
+			break;
+		state(STATE_RAWTEXT_CLOSE_TAG_OPEN)
+			cont = hubbub_tokeniser_handle_rawtext_close_tag_open(
+					tokeniser);
+			break;
+		state(STATE_RAWTEXT_CLOSE_TAG_NAME)
+			cont = hubbub_tokeniser_handle_rawtext_close_tag_name(
+					tokeniser);
 			break;
 		state(STATE_BEFORE_ATTRIBUTE_NAME)
 			cont = hubbub_tokeniser_handle_before_attribute_name(
@@ -743,6 +826,8 @@ hubbub_error hubbub_tokeniser_handle_data(hubbub_tokeniser *tokeniser)
 	}
 }
 
+
+
 /* emit any pending tokens before calling */
 hubbub_error hubbub_tokeniser_handle_character_reference_data(
 		hubbub_tokeniser *tokeniser)
@@ -803,6 +888,375 @@ hubbub_error hubbub_tokeniser_handle_character_reference_data(
 	}
 
 	return HUBBUB_OK;
+}
+
+hubbub_error hubbub_tokeniser_handle_rcdata(hubbub_tokeniser *tokeniser)
+{
+	parserutils_error error;
+	hubbub_token token;
+	const uint8_t *cptr;
+	size_t len;
+
+	while ((error = parserutils_inputstream_peek(tokeniser->input,
+			tokeniser->context.pending, &cptr, &len)) ==
+					PARSERUTILS_OK) {
+		const uint8_t c = *cptr;
+
+		if (c == '&') {
+			tokeniser->state = STATE_CHARACTER_REFERENCE_RCDATA;
+			/* Don't eat the '&'; it'll be handled by entity
+			 * consumption */
+			break;
+		} else if (c == '<') {
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			/* Buffer '<' */
+			tokeniser->context.pending = len;
+			tokeniser->state = STATE_RCDATA_LESSTHAN;
+			break;
+		} else if (c == '\r') {
+			error = parserutils_inputstream_peek(
+					tokeniser->input,
+					tokeniser->context.pending + len,
+					&cptr,
+					&len);
+
+			if (error != PARSERUTILS_OK && 
+					error != PARSERUTILS_EOF) {
+				break;
+			}
+
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			if (error == PARSERUTILS_EOF ||	*cptr != '\n') {
+				/* Emit newline */
+				emit_character_token(tokeniser, &lf_str);
+			}
+
+			/* Advance over */
+			parserutils_inputstream_advance(tokeniser->input, 1);
+		} else {
+			if (c == '\0') {
+				/** \todo parse error */
+				error = parserutils_buffer_append(tokeniser->buffer,
+				u_fffd, sizeof(u_fffd));
+				if (error != PARSERUTILS_OK)
+					return hubbub_error_from_parserutils_error(error);
+			}
+
+			/* Just collect into buffer */
+			tokeniser->context.pending += len;
+		}
+	}
+	if (tokeniser->state != STATE_RCDATA_LESSTHAN &&
+		(tokeniser->state != STATE_RCDATA || error == PARSERUTILS_EOF) &&
+			tokeniser->context.pending > 0) {
+		/* Emit any pending characters */
+		emit_current_chars(tokeniser);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		token.type = HUBBUB_TOKEN_EOF;
+		hubbub_tokeniser_emit_token(tokeniser, &token);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		return HUBBUB_NEEDDATA;
+	} else {
+		return hubbub_error_from_parserutils_error(error);
+	}
+}
+
+
+
+/* emit any pending tokens before calling */
+hubbub_error hubbub_tokeniser_handle_character_reference_rcdata(
+		hubbub_tokeniser *tokeniser)
+{
+	assert(tokeniser->context.pending == 0);
+
+	if (tokeniser->context.match_entity.complete == false) {
+		return hubbub_tokeniser_consume_character_reference(tokeniser,
+				tokeniser->context.pending);
+	} else {
+		hubbub_token token;
+
+		uint8_t utf8[6];
+		uint8_t *utf8ptr = utf8;
+		size_t len = sizeof(utf8);
+
+		token.type = HUBBUB_TOKEN_CHARACTER;
+
+		if (tokeniser->context.match_entity.codepoint) {
+			parserutils_charset_utf8_from_ucs4(
+				tokeniser->context.match_entity.codepoint,
+				&utf8ptr, &len);
+
+			token.data.character.ptr = utf8;
+			token.data.character.len = sizeof(utf8) - len;
+
+			hubbub_tokeniser_emit_token(tokeniser, &token);
+
+			/* +1 for ampersand */
+			parserutils_inputstream_advance(tokeniser->input,
+					tokeniser->context.match_entity.length
+							+ 1);
+		} else {
+			parserutils_error error;
+			const uint8_t *cptr = NULL;
+
+			error = parserutils_inputstream_peek(
+					tokeniser->input,
+					tokeniser->context.pending,
+					&cptr,
+					&len);
+			if (error != PARSERUTILS_OK) {
+				return hubbub_error_from_parserutils_error(
+						error);
+			}
+
+			token.data.character.ptr = cptr;
+			token.data.character.len = len;
+
+			hubbub_tokeniser_emit_token(tokeniser, &token);
+			parserutils_inputstream_advance(tokeniser->input, len);
+		}
+
+		/* Reset for next time */
+		tokeniser->context.match_entity.complete = false;
+
+		tokeniser->state = STATE_RCDATA;
+	}
+
+	return HUBBUB_OK;
+}
+
+hubbub_error hubbub_tokeniser_handle_rawtext(hubbub_tokeniser *tokeniser)
+{
+	parserutils_error error;
+	hubbub_token token;
+	const uint8_t *cptr;
+	size_t len;
+
+	while ((error = parserutils_inputstream_peek(tokeniser->input,
+			tokeniser->context.pending, &cptr, &len)) ==
+					PARSERUTILS_OK) {
+		const uint8_t c = *cptr;
+
+		if (c == '<') {
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			/* Buffer '<' */
+			tokeniser->context.pending = len;
+			tokeniser->state = STATE_RAWTEXT_LESSTHAN;
+			break;
+		} else if (c == '\r') {
+			error = parserutils_inputstream_peek(
+					tokeniser->input,
+					tokeniser->context.pending + len,
+					&cptr,
+					&len);
+
+			if (error != PARSERUTILS_OK && 
+					error != PARSERUTILS_EOF) {
+				break;
+			}
+
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			if (error == PARSERUTILS_EOF ||	*cptr != '\n') {
+				/* Emit newline */
+				emit_character_token(tokeniser, &lf_str);
+			}
+
+			/* Advance over */
+			parserutils_inputstream_advance(tokeniser->input, 1);
+		} else {
+			if (c == '\0') {
+				/** \todo parse error */
+				error = parserutils_buffer_append(tokeniser->buffer,
+				u_fffd, sizeof(u_fffd));
+				if (error != PARSERUTILS_OK)
+					return hubbub_error_from_parserutils_error(error);
+			}
+
+			/* Just collect into buffer */
+			tokeniser->context.pending += len;
+		}
+	}
+	if (tokeniser->state != STATE_RAWTEXT_LESSTHAN &&
+		(tokeniser->state != STATE_RAWTEXT || error == PARSERUTILS_EOF) &&
+			tokeniser->context.pending > 0) {
+		/* Emit any pending characters */
+		emit_current_chars(tokeniser);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		token.type = HUBBUB_TOKEN_EOF;
+		hubbub_tokeniser_emit_token(tokeniser, &token);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		return HUBBUB_NEEDDATA;
+	} else {
+		return hubbub_error_from_parserutils_error(error);
+	}
+}
+
+hubbub_error hubbub_tokeniser_handle_script_data(hubbub_tokeniser *tokeniser)
+{
+	parserutils_error error;
+	hubbub_token token;
+	const uint8_t *cptr;
+	size_t len;
+
+	while ((error = parserutils_inputstream_peek(tokeniser->input,
+			tokeniser->context.pending, &cptr, &len)) ==
+					PARSERUTILS_OK) {
+		const uint8_t c = *cptr;
+
+		if (c == '<') {
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			/* Buffer '<' */
+			tokeniser->context.pending = len;
+			////////tokeniser->state = STATE_SCRIPT_DATA_LESSTHAN;
+			break;
+		} else if (c == '\r') {
+			error = parserutils_inputstream_peek(
+					tokeniser->input,
+					tokeniser->context.pending + len,
+					&cptr,
+					&len);
+
+			if (error != PARSERUTILS_OK && 
+					error != PARSERUTILS_EOF) {
+				break;
+			}
+
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			if (error == PARSERUTILS_EOF ||	*cptr != '\n') {
+				/* Emit newline */
+				emit_character_token(tokeniser, &lf_str);
+			}
+
+			/* Advance over */
+			parserutils_inputstream_advance(tokeniser->input, 1);
+		} else {
+			if (c == '\0') {
+				/** \todo parse error */
+				error = parserutils_buffer_append(tokeniser->buffer,
+				u_fffd, sizeof(u_fffd));
+				if (error != PARSERUTILS_OK)
+					return hubbub_error_from_parserutils_error(error);
+			}
+
+			/* Just collect into buffer */
+			tokeniser->context.pending += len;
+		}
+	}
+	if (tokeniser->state != STATE_SCRIPT_DATA &&
+		(/*tokeniser->state != STATE_SCRIPT_DATA_LESSTHAN || */error == PARSERUTILS_EOF) &&
+			tokeniser->context.pending > 0) {
+		/* Emit any pending characters */
+		emit_current_chars(tokeniser);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		token.type = HUBBUB_TOKEN_EOF;
+		hubbub_tokeniser_emit_token(tokeniser, &token);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		return HUBBUB_NEEDDATA;
+	} else {
+		return hubbub_error_from_parserutils_error(error);
+	}
+}
+
+hubbub_error hubbub_tokeniser_handle_plaintext(hubbub_tokeniser *tokeniser)
+{
+	parserutils_error error;
+	hubbub_token token;
+	const uint8_t *cptr;
+	size_t len;
+
+	while ((error = parserutils_inputstream_peek(tokeniser->input,
+			tokeniser->context.pending, &cptr, &len)) ==
+					PARSERUTILS_OK) {
+		const uint8_t c = *cptr;
+
+		if (c == '\r') {
+			error = parserutils_inputstream_peek(
+					tokeniser->input,
+					tokeniser->context.pending + len,
+					&cptr,
+					&len);
+
+			if (error != PARSERUTILS_OK && 
+					error != PARSERUTILS_EOF) {
+				break;
+			}
+
+			if (tokeniser->context.pending > 0) {
+				/* Emit any pending characters */
+				emit_current_chars(tokeniser);
+			}
+
+			if (error == PARSERUTILS_EOF ||	*cptr != '\n') {
+				/* Emit newline */
+				emit_character_token(tokeniser, &lf_str);
+			}
+
+			/* Advance over */
+			parserutils_inputstream_advance(tokeniser->input, 1);
+		} else {
+			if (c == '\0') {
+				/** \todo parse error */
+				error = parserutils_buffer_append(tokeniser->buffer,
+				u_fffd, sizeof(u_fffd));
+				if (error != PARSERUTILS_OK)
+					return hubbub_error_from_parserutils_error(error);
+			}
+
+			/* Just collect into buffer */
+			tokeniser->context.pending += len;
+		}
+	}
+	if (tokeniser->context.pending > 0) {
+		/* Emit any pending characters */
+		emit_current_chars(tokeniser);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		token.type = HUBBUB_TOKEN_EOF;
+		hubbub_tokeniser_emit_token(tokeniser, &token);
+	}
+
+	if (error == PARSERUTILS_EOF) {
+		return HUBBUB_NEEDDATA;
+	} else {
+		return hubbub_error_from_parserutils_error(error);
+	}
 }
 
 /* this state always switches to another state straight away */
@@ -1019,6 +1473,419 @@ hubbub_error hubbub_tokeniser_handle_tag_name(hubbub_tokeniser *tokeniser)
 	} else {
 		COLLECT(ctag->name, cptr, len);
 		tokeniser->context.pending += len;
+	}
+
+	return HUBBUB_OK;
+}
+
+/* this state always switches to another state straight away */
+/* this state expects the current character to be '<' */
+hubbub_error hubbub_tokeniser_handle_rcdata_lessthan(hubbub_tokeniser *tokeniser)
+{
+	//hubbub_tag *ctag = &tokeniser->context.current_tag;
+
+	size_t len;
+	const uint8_t *cptr;
+	parserutils_error error;
+	uint8_t c;
+
+	assert(tokeniser->context.pending == 1);
+/*	assert(tokeniser->context.chars.ptr[0] == '<'); */
+
+	error = parserutils_inputstream_peek(tokeniser->input, 
+			tokeniser->context.pending, &cptr, &len);
+
+	if (error != PARSERUTILS_OK) {
+		if (error == PARSERUTILS_EOF) {
+			/** \todo parse error */
+			/* Emit single '<' char  */
+			emit_current_chars(tokeniser);
+			tokeniser->state = STATE_RCDATA;
+			return HUBBUB_OK;
+		} else {
+			return hubbub_error_from_parserutils_error(error);
+		}
+	}
+
+	c = *cptr;
+
+	if (c == '/'){
+		tokeniser->context.pending += len;
+
+		tokeniser->context.close_tag_match.match = false;
+		tokeniser->context.close_tag_match.count = 0;
+
+		tokeniser->state = STATE_RCDATA_CLOSE_TAG_OPEN;
+	} else {
+		/* Emit single '<' char  */
+		emit_current_chars(tokeniser);
+		tokeniser->state = STATE_RCDATA;
+	}
+
+
+	return HUBBUB_OK;
+}
+
+/* this state expects tokeniser->context.chars to be "</" */
+/* this state never stays in this state for more than one character */
+hubbub_error hubbub_tokeniser_handle_rcdata_close_tag_open(hubbub_tokeniser *tokeniser)
+{
+	hubbub_tokeniser_context *ctx = &tokeniser->context;
+
+	size_t len;
+	const uint8_t *cptr;
+	parserutils_error error;
+	uint8_t c;
+
+	assert(tokeniser->context.pending == 2);
+/*	assert(tokeniser->context.chars.ptr[0] == '<'); */
+/*	assert(tokeniser->context.chars.ptr[1] == '/'); */
+
+	uint8_t *start_tag_name =
+			tokeniser->context.last_start_tag_name;
+	size_t start_tag_len =
+		tokeniser->context.last_start_tag_len;
+
+	while ((error = parserutils_inputstream_peek(tokeniser->input,
+				ctx->pending +
+					ctx->close_tag_match.count,
+				&cptr,
+				&len)) == PARSERUTILS_OK) {
+		c = *cptr;
+
+		if ((start_tag_name[ctx->close_tag_match.count] & ~0x20)
+				!= (c & ~0x20)) {
+			break;
+		}
+
+		ctx->close_tag_match.count += len;
+
+		if (ctx->close_tag_match.count == start_tag_len) {
+
+			// Sets the flag to be used in name state.
+			ctx->close_tag_match.match = true;
+			break;
+		}
+	}
+
+	if (error != PARSERUTILS_OK) {
+		if (error == PARSERUTILS_EOF) {
+			tokeniser->state = STATE_RCDATA;
+			tokeniser->context.pending += ctx->close_tag_match.count;
+			return HUBBUB_OK;
+		} else {
+			return hubbub_error_from_parserutils_error(error);
+		}
+	}
+
+	if (ctx->close_tag_match.match == true) {
+		error = parserutils_inputstream_peek(
+				 		tokeniser->input,
+				 		ctx->pending +
+					 		ctx->close_tag_match.count,
+						&cptr,
+				 		&len);
+
+		if (error != PARSERUTILS_OK && 
+				error != PARSERUTILS_EOF) {
+			return hubbub_error_from_parserutils_error(
+					error);
+		} else if (error != PARSERUTILS_EOF) {
+			c = *cptr;
+
+			if (c != '\t' && c != '\n' && c != '\f' && c != '\r' && 
+					c != ' ' && c != '>' &&
+					c != '/') {
+				ctx->close_tag_match.match = false;
+			}
+		}
+	}
+
+	if (ctx->close_tag_match.match == true) {
+
+		tokeniser->state = STATE_RCDATA_CLOSE_TAG_NAME;
+
+		// Creates a new buffer and sets first charachter of the tag name 
+		START_BUF(ctx->current_tag.name,
+					&start_tag_name[0], len);
+		tokeniser->context.current_tag.n_attributes = 0;
+
+		tokeniser->context.current_tag_type =
+				HUBBUB_TOKEN_END_TAG;
+
+		tokeniser->context.pending += len;
+
+		tokeniser->state = STATE_RCDATA_CLOSE_TAG_NAME;
+	} else {
+		emit_current_chars(tokeniser);
+		tokeniser->state = STATE_RCDATA;
+	}
+
+	return HUBBUB_OK;
+}
+
+/* this state expects tokeniser->context.current_tag to already have its
+   first character set */
+hubbub_error hubbub_tokeniser_handle_rcdata_close_tag_name(hubbub_tokeniser *tokeniser)
+{
+	hubbub_tokeniser_context *ctx = &tokeniser->context;
+
+	size_t len;
+	const uint8_t *cptr;
+	parserutils_error error;
+	uint8_t c;
+
+	assert(tokeniser->context.pending > 0);
+/*	assert(tokeniser->context.chars.ptr[0] == '<'); */
+	assert(ctx.current_tag->name.len > 0);
+/*	assert(ctx.current_tag->name.ptr); */
+
+	error = parserutils_inputstream_peek(tokeniser->input, 
+			tokeniser->context.pending, &cptr, &len);
+
+	if (error != PARSERUTILS_OK) {
+		if (error == PARSERUTILS_EOF) {
+			/** \todo parse error */
+			tokeniser->state = STATE_RCDATA;
+			return HUBBUB_OK;
+		} else {
+			return hubbub_error_from_parserutils_error(error);
+		}
+	}
+
+	c = *cptr;
+
+	if ((c == '\t' || c == '\n' || c == '\f' || c == ' ' || c == '\r')
+		&& ctx->close_tag_match.match == true) {
+		// Add condition for approproiate end tag token
+		tokeniser->context.pending += len;
+		tokeniser->state = STATE_BEFORE_ATTRIBUTE_NAME;
+	} else if (c == '/' && ctx->close_tag_match.match == true) {
+		// Add condition for approproiate end tag token
+		tokeniser->context.pending += len;
+		tokeniser->state = STATE_SELF_CLOSING_START_TAG;
+	} else if (c == '>' && ctx->close_tag_match.match == true) {
+		// Add condition for approproiate end tag token
+		tokeniser->context.pending += len;
+		tokeniser->state = STATE_DATA;
+		return emit_current_tag(tokeniser);
+	} else if ('A' <= c && c <= 'Z') {
+		uint8_t lc = (c + 0x20);
+		COLLECT(ctx->current_tag.name, &lc, len);
+		tokeniser->context.pending += len;
+	} else if ('a' <= c && c <= 'z') {
+		COLLECT(ctx->current_tag.name, cptr, len);
+		tokeniser->context.pending += len;
+	} else {
+		tokeniser->state = STATE_RCDATA;
+		return emit_current_chars(tokeniser);
+	}
+
+	return HUBBUB_OK;
+}
+
+/* this state always switches to another state straight away */
+/* this state expects the current character to be '<' */
+hubbub_error hubbub_tokeniser_handle_rawtext_lessthan(hubbub_tokeniser *tokeniser)
+{
+	//hubbub_tag *ctag = &tokeniser->context.current_tag;
+
+	size_t len;
+	const uint8_t *cptr;
+	parserutils_error error;
+	uint8_t c;
+
+	assert(tokeniser->context.pending == 1);
+/*	assert(tokeniser->context.chars.ptr[0] == '<'); */
+
+	error = parserutils_inputstream_peek(tokeniser->input, 
+			tokeniser->context.pending, &cptr, &len);
+
+	if (error != PARSERUTILS_OK) {
+		if (error == PARSERUTILS_EOF) {
+			/** \todo parse error */
+			/* Emit single '<' char  */
+			emit_current_chars(tokeniser);
+			tokeniser->state = STATE_RAWTEXT;
+			return HUBBUB_OK;
+		} else {
+			return hubbub_error_from_parserutils_error(error);
+		}
+	}
+
+	c = *cptr;
+
+	if (c == '/'){
+		tokeniser->context.pending += len;
+
+		tokeniser->context.close_tag_match.match = false;
+		tokeniser->context.close_tag_match.count = 0;
+
+		tokeniser->state = STATE_RAWTEXT_CLOSE_TAG_OPEN;
+	} else {
+		/* Emit single '<' char  */
+		emit_current_chars(tokeniser);
+		tokeniser->state = STATE_RCDATA;
+	}
+
+
+	return HUBBUB_OK;
+}
+
+/* this state expects tokeniser->context.chars to be "</" */
+/* this state never stays in this state for more than one character */
+hubbub_error hubbub_tokeniser_handle_rawtext_close_tag_open(hubbub_tokeniser *tokeniser)
+{
+	hubbub_tokeniser_context *ctx = &tokeniser->context;
+
+	size_t len;
+	const uint8_t *cptr;
+	parserutils_error error;
+	uint8_t c;
+
+	assert(tokeniser->context.pending == 2);
+/*	assert(tokeniser->context.chars.ptr[0] == '<'); */
+/*	assert(tokeniser->context.chars.ptr[1] == '/'); */
+
+	uint8_t *start_tag_name =
+			tokeniser->context.last_start_tag_name;
+	size_t start_tag_len =
+		tokeniser->context.last_start_tag_len;
+
+	while ((error = parserutils_inputstream_peek(tokeniser->input,
+				ctx->pending +
+					ctx->close_tag_match.count,
+				&cptr,
+				&len)) == PARSERUTILS_OK) {
+		c = *cptr;
+
+		if ((start_tag_name[ctx->close_tag_match.count] & ~0x20)
+				!= (c & ~0x20)) {
+			break;
+		}
+
+		ctx->close_tag_match.count += len;
+
+		if (ctx->close_tag_match.count == start_tag_len) {
+
+			// Sets the flag to be used in name state.
+			ctx->close_tag_match.match = true;
+			break;
+		}
+	}
+
+	if (error != PARSERUTILS_OK) {
+		if (error == PARSERUTILS_EOF) {
+			tokeniser->state = STATE_RAWTEXT;
+			tokeniser->context.pending += ctx->close_tag_match.count;
+			return HUBBUB_OK;
+		} else {
+			return hubbub_error_from_parserutils_error(error);
+		}
+	}
+
+	if (ctx->close_tag_match.match == true) {
+		error = parserutils_inputstream_peek(
+				 		tokeniser->input,
+				 		ctx->pending +
+					 		ctx->close_tag_match.count,
+						&cptr,
+				 		&len);
+
+		if (error != PARSERUTILS_OK && 
+				error != PARSERUTILS_EOF) {
+			return hubbub_error_from_parserutils_error(
+					error);
+		} else if (error != PARSERUTILS_EOF) {
+			c = *cptr;
+
+			if (c != '\t' && c != '\n' && c != '\f' && c != '\r' && 
+					c != ' ' && c != '>' &&
+					c != '/') {
+				ctx->close_tag_match.match = false;
+			}
+		}
+	}
+
+	if (ctx->close_tag_match.match == true) {
+
+		tokeniser->state = STATE_RCDATA_CLOSE_TAG_NAME;
+
+		// Creates a new buffer and sets first charachter of the tag name 
+		START_BUF(ctx->current_tag.name,
+					&start_tag_name[0], len);
+		tokeniser->context.current_tag.n_attributes = 0;
+
+		tokeniser->context.current_tag_type =
+				HUBBUB_TOKEN_END_TAG;
+
+		tokeniser->context.pending += len;
+
+		tokeniser->state = STATE_RAWTEXT_CLOSE_TAG_NAME;
+	} else {
+		emit_current_chars(tokeniser);
+		tokeniser->state = STATE_RAWTEXT;
+	}
+
+	return HUBBUB_OK;
+}
+
+/* this state expects tokeniser->context.current_tag to already have its
+   first character set */
+hubbub_error hubbub_tokeniser_handle_rawtext_close_tag_name(hubbub_tokeniser *tokeniser)
+{
+	hubbub_tokeniser_context *ctx = &tokeniser->context;
+
+	size_t len;
+	const uint8_t *cptr;
+	parserutils_error error;
+	uint8_t c;
+
+	assert(tokeniser->context.pending > 0);
+/*	assert(tokeniser->context.chars.ptr[0] == '<'); */
+	assert(ctag->name.len > 0);
+/*	assert(ctag->name.ptr); */
+
+	error = parserutils_inputstream_peek(tokeniser->input, 
+			tokeniser->context.pending, &cptr, &len);
+
+	if (error != PARSERUTILS_OK) {
+		if (error == PARSERUTILS_EOF) {
+			tokeniser->state = STATE_RAWTEXT;
+
+			emit_current_chars(tokeniser);
+			return HUBBUB_OK;
+		} else {
+			return hubbub_error_from_parserutils_error(error);
+		}
+	}
+
+	c = *cptr;
+
+	if ((c == '\t' || c == '\n' || c == '\f' || c == ' ' || c == '\r')
+		&& ctx->close_tag_match.match == true) {
+		// Add condition for approproiate end tag token
+		tokeniser->context.pending += len;
+		tokeniser->state = STATE_BEFORE_ATTRIBUTE_NAME;
+	} else if (c == '/' && ctx->close_tag_match.match == true) {
+		// Add condition for approproiate end tag token
+		tokeniser->context.pending += len;
+		tokeniser->state = STATE_SELF_CLOSING_START_TAG;
+	} else if (c == '>' && ctx->close_tag_match.match == true) {
+		// Add condition for approproiate end tag token
+		tokeniser->context.pending += len;
+		tokeniser->state = STATE_DATA;
+		return emit_current_tag(tokeniser);
+	} else if ('A' <= c && c <= 'Z') {
+		uint8_t lc = (c + 0x20);
+		COLLECT(ctx->current_tag.name, &lc, len);
+		tokeniser->context.pending += len;
+	} else if ('a' <= c && c <= 'z') {
+		COLLECT(ctx->current_tag.name, cptr, len);
+		tokeniser->context.pending += len;
+	} else {
+		tokeniser->state = STATE_RAWTEXT;
+		return emit_current_chars(tokeniser);
 	}
 
 	return HUBBUB_OK;
@@ -3315,7 +4182,7 @@ hubbub_error emit_current_tag(hubbub_tokeniser *tokeniser)
 	err = hubbub_tokeniser_emit_token(tokeniser, &token);
 
 	if (token.type == HUBBUB_TOKEN_START_TAG) {
-		/* Save start tag name for R?CDATA */
+		/* Save start tag name for R?CDATA states */
 		if (token.data.tag.name.len <
 			sizeof(tokeniser->context.last_start_tag_name)) {
 			strncpy((char *) tokeniser->context.last_start_tag_name,
@@ -3328,8 +4195,9 @@ hubbub_error emit_current_tag(hubbub_tokeniser *tokeniser)
 			tokeniser->context.last_start_tag_len = 0;
 		}
 	} else /* if (token->type == HUBBUB_TOKEN_END_TAG) */ {
-		/* Reset content model after R?CDATA elements */
-		tokeniser->content_model = HUBBUB_CONTENT_MODEL_PCDATA;
+		/* Reset content model (i.e state will be now STATE_DATA)
+			 after R?CDATA elements */
+		tokeniser->state = STATE_DATA;
 	}
 
 	/* Reset the self-closing flag */

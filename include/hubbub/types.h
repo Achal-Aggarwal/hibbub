@@ -29,12 +29,13 @@ typedef enum hubbub_charset_source {
 /**
  * Content model flag
  */
-typedef enum hubbub_content_model {
-	HUBBUB_CONTENT_MODEL_PCDATA,
-	HUBBUB_CONTENT_MODEL_RCDATA,
-	HUBBUB_CONTENT_MODEL_CDATA,
-	HUBBUB_CONTENT_MODEL_PLAINTEXT
-} hubbub_content_model;
+typedef enum hubbub_initial_state {
+	HUBBUB_INITIAL_STATE_DATA,
+	HUBBUB_INITIAL_STATE_RCDATA,
+	HUBBUB_INITIAL_STATE_CDATA,
+	HUBBUB_INITIAL_STATE_PLAINTEXT,
+	HUBBUB_INITIAL_STATE_RAWTEXT
+} hubbub_initial_state;
 
 /**
  * Quirks mode flag

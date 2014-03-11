@@ -27,7 +27,7 @@ typedef struct context {
 	size_t char_off;
 
 	const char *last_start_tag;
-	struct array_list *content_model;
+	struct array_list *initial_state;
 	bool process_cdata;
 } context;
 
@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 			(struct json_object *) array_list_get_idx(tests, i);
 
 		ctx.last_start_tag = NULL;
-		ctx.content_model = NULL;
+		ctx.initial_state = NULL;
 		ctx.process_cdata = false;
 
 		/* Extract settings */
@@ -88,8 +88,8 @@ int main(int argc, char **argv)
 			} else if (strcmp(key, "lastStartTag") == 0) {
 				ctx.last_start_tag = (const char *)
 						json_object_get_string(val);
-			} else if (strcmp(key, "contentModelFlags") == 0) {
-				ctx.content_model =
+			} else if (strcmp(key, "initialStates") == 0) {
+				ctx.initial_state =
 						json_object_get_array(val);
 			} else if (strcmp(key, "processCDATA") == 0) {
 				ctx.process_cdata =
@@ -116,10 +116,10 @@ void run_test(context *ctx)
 	int i, max_i;
 	struct array_list *outputsave = ctx->output;
 
-	if (ctx->content_model == NULL) {
+	if (ctx->initial_state == NULL) {
 		max_i = 1;
 	} else {
-		max_i = array_list_length(ctx->content_model);
+		max_i = array_list_length(ctx->initial_state);
 	}
 
 	/* We test for each of the content models specified */
@@ -163,30 +163,35 @@ void run_test(context *ctx)
 				HUBBUB_TOKENISER_TOKEN_HANDLER,
 				&params) == HUBBUB_OK);
 
-		if (ctx->content_model == NULL) {
-			params.content_model.model =
-					HUBBUB_CONTENT_MODEL_PCDATA;
+		if (ctx->initial_state == NULL) {
+			params.initial_state.state =
+					HUBBUB_INITIAL_STATE_DATA;
 		} else {
 			const char *cm = json_object_get_string(
 				(struct json_object *)
-				array_list_get_idx(ctx->content_model, i));
+				array_list_get_idx(ctx->initial_state, i));
 
 			if (strcmp(cm, "PCDATA") == 0) {
-				params.content_model.model =
-						HUBBUB_CONTENT_MODEL_PCDATA;
-			} else if (strcmp(cm, "RCDATA") == 0) {
-				params.content_model.model =
-						HUBBUB_CONTENT_MODEL_RCDATA;
-			} else if (strcmp(cm, "CDATA") == 0) {
-				params.content_model.model =
-						HUBBUB_CONTENT_MODEL_CDATA;
+				params.initial_state.state =
+						HUBBUB_INITIAL_STATE_DATA;
+			} else if (strcmp(cm, "RCDATA state") == 0) {
+				
+				params.initial_state.state =
+						HUBBUB_INITIAL_STATE_RCDATA;
+			} else if (strcmp(cm, "CDATA state") == 0) {
+				params.initial_state.state =
+						HUBBUB_INITIAL_STATE_CDATA;
+			} else if (strcmp(cm, "RAWTEXT state") == 0) {
+			params.initial_state.state =
+						HUBBUB_INITIAL_STATE_RAWTEXT;
 			} else {
-				params.content_model.model =
-					HUBBUB_CONTENT_MODEL_PLAINTEXT;
+			params.initial_state.state =
+					HUBBUB_INITIAL_STATE_PLAINTEXT;
 			}
 		}
+
 		assert(hubbub_tokeniser_setopt(tok,
-				HUBBUB_TOKENISER_CONTENT_MODEL,
+				HUBBUB_TOKENISER_INITIAL_STATE,
 				&params) == HUBBUB_OK);
 
 		assert(parserutils_inputstream_append(stream,
