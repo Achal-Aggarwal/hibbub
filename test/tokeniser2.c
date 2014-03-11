@@ -175,7 +175,6 @@ void run_test(context *ctx)
 				params.initial_state.state =
 						HUBBUB_INITIAL_STATE_DATA;
 			} else if (strcmp(cm, "RCDATA state") == 0) {
-				
 				params.initial_state.state =
 						HUBBUB_INITIAL_STATE_RCDATA;
 			} else if (strcmp(cm, "CDATA state") == 0) {
