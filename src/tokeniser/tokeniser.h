@@ -25,7 +25,7 @@ typedef struct hubbub_tokeniser hubbub_tokeniser;
 typedef enum hubbub_tokeniser_opttype {
 	HUBBUB_TOKENISER_TOKEN_HANDLER,
 	HUBBUB_TOKENISER_ERROR_HANDLER,
-	HUBBUB_TOKENISER_CONTENT_MODEL,
+	HUBBUB_TOKENISER_INITIAL_STATE,
 	HUBBUB_TOKENISER_PROCESS_CDATA,
 	HUBBUB_TOKENISER_PAUSE
 } hubbub_tokeniser_opttype;
@@ -45,8 +45,8 @@ typedef union hubbub_tokeniser_optparams {
 	} error_handler;		/**< Error handling callback */
 
 	struct {
-		hubbub_content_model model;
-	} content_model;		/**< Current content model */
+		hubbub_initial_state state;
+	} initial_state;		/**< Initial State of the tokeniser */
 
 	bool process_cdata;		/**< Whether to process CDATA sections*/
 

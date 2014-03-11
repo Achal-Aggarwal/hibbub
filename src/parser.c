@@ -160,9 +160,9 @@ hubbub_error hubbub_parser_setopt(hubbub_parser *parser,
 		}
 		break;
 
-	case HUBBUB_PARSER_CONTENT_MODEL:
+	case HUBBUB_PARSER_INITIAL_STATE:
 		result = hubbub_tokeniser_setopt(parser->tok,
-				HUBBUB_TOKENISER_CONTENT_MODEL,
+				HUBBUB_TOKENISER_INITIAL_STATE,
 				(hubbub_tokeniser_optparams *) params);
 		break;
 

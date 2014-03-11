@@ -740,10 +740,10 @@ hubbub_error process_plaintext_in_body(hubbub_treebuilder *treebuilder,
 	if (err != HUBBUB_OK)
 		return err;
 
-	params.content_model.model = HUBBUB_CONTENT_MODEL_PLAINTEXT;
+	params.initial_state.state = HUBBUB_INITIAL_STATE_PLAINTEXT;
 
 	err = hubbub_tokeniser_setopt(treebuilder->tokeniser,
-			HUBBUB_TOKENISER_CONTENT_MODEL,
+			HUBBUB_TOKENISER_INITIAL_STATE,
 			&params);
 	assert(err == HUBBUB_OK);
 

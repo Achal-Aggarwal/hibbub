@@ -29,7 +29,7 @@ typedef struct hubbub_parser hubbub_parser;
 typedef enum hubbub_parser_opttype {
 	HUBBUB_PARSER_TOKEN_HANDLER,
 	HUBBUB_PARSER_ERROR_HANDLER,
-	HUBBUB_PARSER_CONTENT_MODEL,
+	HUBBUB_PARSER_INITIAL_STATE,
 	HUBBUB_PARSER_TREE_HANDLER,
 	HUBBUB_PARSER_DOCUMENT_NODE,
 	HUBBUB_PARSER_ENABLE_SCRIPTING,
@@ -51,8 +51,8 @@ typedef union hubbub_parser_optparams {
 	} error_handler;		/**< Error handling callback */
 
 	struct {
-		hubbub_content_model model;
-	} content_model;		/**< Current content model */
+		hubbub_initial_state state;
+	} initial_state;		/**< Initial state of tokeniser */
 
 	hubbub_tree_handler *tree_handler;	/**< Tree handling callbacks */
 

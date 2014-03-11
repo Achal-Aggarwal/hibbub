@@ -473,10 +473,10 @@ hubbub_error parse_generic_rcdata(hubbub_treebuilder *treebuilder,
 	if (error != HUBBUB_OK)
 		return error;
 
-	params.content_model.model = rcdata ? HUBBUB_CONTENT_MODEL_RCDATA
-					    : HUBBUB_CONTENT_MODEL_CDATA;
+	params.initial_state.state = rcdata ? HUBBUB_INITIAL_STATE_RCDATA
+					    : HUBBUB_INITIAL_STATE_CDATA;
 	error = hubbub_tokeniser_setopt(treebuilder->tokeniser,
-				HUBBUB_TOKENISER_CONTENT_MODEL, &params);
+				HUBBUB_TOKENISER_INITIAL_STATE, &params);
 	/* There is no way that setopt can fail. Ensure this. */
 	assert(error == HUBBUB_OK);
 
