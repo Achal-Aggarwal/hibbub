@@ -1537,44 +1537,46 @@ hubbub_error hubbub_tokeniser_handle_rcdata_close_tag_open(hubbub_tokeniser *tok
 	parserutils_error error;
 	uint8_t c;
 
+	uint8_t *start_tag_name =
+				tokeniser->context.last_start_tag_name;
+		size_t start_tag_len =
+			tokeniser->context.last_start_tag_len;
+
 	assert(tokeniser->context.pending == 2);
 /*	assert(tokeniser->context.chars.ptr[0] == '<'); */
 /*	assert(tokeniser->context.chars.ptr[1] == '/'); */
 
-	uint8_t *start_tag_name =
-			tokeniser->context.last_start_tag_name;
-	size_t start_tag_len =
-		tokeniser->context.last_start_tag_len;
+	if (ctx->close_tag_match.match == false) {
 
-	while ((error = parserutils_inputstream_peek(tokeniser->input,
-				ctx->pending +
-					ctx->close_tag_match.count,
-				&cptr,
-				&len)) == PARSERUTILS_OK) {
-		c = *cptr;
+		while ((error = parserutils_inputstream_peek(tokeniser->input,
+					ctx->pending +
+						ctx->close_tag_match.count,
+					&cptr,
+					&len)) == PARSERUTILS_OK) {
+			c = *cptr;
+			if ((start_tag_name[ctx->close_tag_match.count] & ~0x20)
+					!= (c & ~0x20)) {
+				break;
+			}
 
-		if ((start_tag_name[ctx->close_tag_match.count] & ~0x20)
-				!= (c & ~0x20)) {
-			break;
+			ctx->close_tag_match.count += len;
+
+			if (ctx->close_tag_match.count == start_tag_len) {
+				// Sets the flag to be used in name state.
+				ctx->close_tag_match.match = true;
+				break;
+			}
 		}
 
-		ctx->close_tag_match.count += len;
+		if (error != PARSERUTILS_OK) {
+			if (error == PARSERUTILS_EOF) {
+				tokeniser->state = STATE_RCDATA;
+				tokeniser->context.pending += ctx->close_tag_match.count;
 
-		if (ctx->close_tag_match.count == start_tag_len) {
-
-			// Sets the flag to be used in name state.
-			ctx->close_tag_match.match = true;
-			break;
-		}
-	}
-
-	if (error != PARSERUTILS_OK) {
-		if (error == PARSERUTILS_EOF) {
-			tokeniser->state = STATE_RCDATA;
-			tokeniser->context.pending += ctx->close_tag_match.count;
-			return HUBBUB_OK;
-		} else {
-			return hubbub_error_from_parserutils_error(error);
+				return HUBBUB_OK;
+			} else {
+				return hubbub_error_from_parserutils_error(error);
+			}
 		}
 	}
 
@@ -1752,35 +1754,37 @@ hubbub_error hubbub_tokeniser_handle_rawtext_close_tag_open(hubbub_tokeniser *to
 	size_t start_tag_len =
 		tokeniser->context.last_start_tag_len;
 
-	while ((error = parserutils_inputstream_peek(tokeniser->input,
-				ctx->pending +
-					ctx->close_tag_match.count,
-				&cptr,
-				&len)) == PARSERUTILS_OK) {
-		c = *cptr;
+	if (ctx->close_tag_match.match == false) {
+		while ((error = parserutils_inputstream_peek(tokeniser->input,
+					ctx->pending +
+						ctx->close_tag_match.count,
+					&cptr,
+					&len)) == PARSERUTILS_OK) {
+			c = *cptr;
 
-		if ((start_tag_name[ctx->close_tag_match.count] & ~0x20)
-				!= (c & ~0x20)) {
-			break;
+			if ((start_tag_name[ctx->close_tag_match.count] & ~0x20)
+					!= (c & ~0x20)) {
+				break;
+			}
+
+			ctx->close_tag_match.count += len;
+
+			if (ctx->close_tag_match.count == start_tag_len) {
+
+				// Sets the flag to be used in name state.
+				ctx->close_tag_match.match = true;
+				break;
+			}
 		}
 
-		ctx->close_tag_match.count += len;
-
-		if (ctx->close_tag_match.count == start_tag_len) {
-
-			// Sets the flag to be used in name state.
-			ctx->close_tag_match.match = true;
-			break;
-		}
-	}
-
-	if (error != PARSERUTILS_OK) {
-		if (error == PARSERUTILS_EOF) {
-			tokeniser->state = STATE_RAWTEXT;
-			tokeniser->context.pending += ctx->close_tag_match.count;
-			return HUBBUB_OK;
-		} else {
-			return hubbub_error_from_parserutils_error(error);
+		if (error != PARSERUTILS_OK) {
+			if (error == PARSERUTILS_EOF) {
+				tokeniser->state = STATE_RAWTEXT;
+				tokeniser->context.pending += ctx->close_tag_match.count;
+				return HUBBUB_OK;
+			} else {
+				return hubbub_error_from_parserutils_error(error);
+			}
 		}
 	}
 
