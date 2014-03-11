@@ -1,13 +1,5 @@
 {"tests": [
 
-{"description":"< in attribute name",
-"input":"<z/0  <",
-"output":["ParseError", "ParseError", ["StartTag", "z", {"0": "", "<": ""}]]},
-
-{"description":"< in attribute value",
-"input":"<z x=<",
-"output":["ParseError", ["StartTag", "z", {"x": "<"}]]},
-
 {"description":"= in unquoted attribute value",
 "input":"<z z=z=z>",
 "output":["ParseError", ["StartTag", "z", {"z": "z=z"}]]},
@@ -96,14 +88,6 @@
 "input":"<!doctype html \r",
 "output":["ParseError", ["DOCTYPE", "html", null, null, false]]},
 
-{"description":"CR EOF in tag name",
-"input":"<z\r",
-"output":["ParseError", ["StartTag", "z", {}]]},
-
-{"description":"Slash EOF in tag name",
-"input":"<z/",
-"output":["ParseError", ["StartTag", "z", {}]]},
-
 {"description":"Zero hex numeric entity",
 "input":"&#x0",
 "output":["ParseError", "ParseError", ["Character", "\uFFFD"]]},
@@ -131,10 +115,6 @@
 {"description":"Non-BMP numeric entity",
 "input":"&#x10000;",
 "output":[["Character", "\uD800\uDC00"]]},
-
-{"description":"Maximum non-BMP numeric entity",
-"input":"&#X10FFFF;",
-"output":["ParseError", ["Character", "\uFFFD"]]},
 
 {"description":"Above maximum numeric entity",
 "input":"&#x110000;",
@@ -220,11 +200,6 @@
 "input":"<!dOcTyPe hTmL sYsTeM \"xYz\">",
 "output":[["DOCTYPE", "html", null, "xYz", true]]},
 
-{"description":"U+0000 in lookahead region after non-matching character",
-"input":"<!doc>\u0000",
-"output":["ParseError", ["Comment", "doc"], "ParseError", ["Character", "\uFFFD"]],
-"ignoreErrorOrder":true},
-
 {"description":"U+0000 in lookahead region",
 "input":"<!doc\u0000",
 "output":["ParseError", "ParseError", ["Comment", "doc\uFFFD"]],
@@ -243,11 +218,6 @@
 {"description":"U+1FFFF in lookahead region",
 "input":"<!doc\uD83F\uDFFF",
 "output":["ParseError", "ParseError", ["Comment", "doc\uD83F\uDFFF"]],
-"ignoreErrorOrder":true},
-
-{"description":"CR followed by U+0000",
-"input":"\r\u0000",
-"output":["ParseError", ["Character", "\n\uFFFD"]],
 "ignoreErrorOrder":true},
 
 {"description":"CR followed by non-LF",
